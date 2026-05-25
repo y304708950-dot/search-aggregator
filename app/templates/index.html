@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}搜索聚合器{% endblock %}
+{% block head %}
+<style>
+    .result-card { transition: opacity 0.3s ease; }
+    .skeleton { animation: pulse 1.5s infinite; }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+    <header class="mb-8">
+        <h1 class="text-2xl font-bold text-gray-900">搜索聚合器</h1>
+        <p class="text-gray-500 text-sm mt-1">输入关键词，跨平台聚合搜索结果</p>
+    </header>
+
+    <form id="search-form" class="mb-8">
+        <div class="flex gap-3">
+            <input
+                type="text"
+                id="query-input"
+                name="query"
+                placeholder="输入关键词，如：市集、AI绘画、独立游戏..."
+                class="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+                autofocus
+            >
+            <button
+                type="submit"
+                id="search-btn"
+                class="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition-colors"
+            >
+                搜索
+            </button>
+        </div>
+
+        <div class="flex flex-wrap gap-3 mt-3 text-sm text-gray-600">
+            {% for p in platforms %}
+            <label class="flex items-center gap-1 cursor-pointer hover:text-gray-900">
+                <input type="checkbox" name="platforms" value="{{ p.id }}" checked
+                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                <span>{{ p.icon }} {{ p.name }}</span>
+            </label>
+            {% endfor %}
+        </div>
+    </form>
+
+    <div id="search-status" class="hidden text-center py-8 text-gray-400">
+        <div id="status-text">正在搜索...</div>
+    </div>
+
+    <div id="results-area" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div id="empty-hint" class="col-span-full text-center py-16 text-gray-400">
+            <p class="text-lg">输入关键词开始搜索</p>
+            <p class="text-sm mt-1">结果将按平台分组展示</p>
+        </div>
+    </div>
+</div>
+
+<script>
+const PLATFORM_NAMES = {{ platforms | tojson }};
+const PLATFORM_MAP = {};
+PLATFORM_NAMES.forEach(p => { PLATFORM_MAP[p.id] = p; });
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function createCard(data) {
+    const meta = PLATFORM_MAP[data.platform] || { name: data.platform, icon: '' };
+    const div = document.createElement('div');
+    div.className = 'result-card border border-gray-200 rounded-lg p-4 bg-white shadow-sm';
+
+    let body = '';
+    if (data.error) {
+        body = `<p class="text-red-500 text-sm">错误: ${escapeHtml(data.error)}</p>`;
+    } else if (!data.results || data.results.length === 0) {
+        body = '<p class="text-gray-400 text-sm">无结果</p>';
+    } else {
+        body = '<ul class="space-y-3">' + data.results.map(r => `
+            <li>
+                <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener"
+                   class="text-blue-600 hover:underline font-medium text-sm break-all">
+                    ${escapeHtml(r.title)}
+                </a>
+                ${r.snippet ? `<p class="text-xs text-gray-500 mt-0.5 line-clamp-2">${escapeHtml(r.snippet)}</p>` : ''}
+            </li>
+        `).join('') + '</ul>';
+    }
+
+    const timeInfo = data.cached
+        ? '<span class="text-xs text-green-500 ml-2">缓存</span>'
+        : `<span class="text-xs text-gray-400 ml-2">${Math.round(data.elapsed_ms)}ms</span>`;
+
+    div.innerHTML = `
+        <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
+            <h3 class="font-semibold text-gray-800">
+                ${meta.icon} ${meta.name}
+                ${timeInfo}
+            </h3>
+        </div>
+        ${body}
+    `;
+    return div;
+}
+
+document.getElementById('search-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const query = formData.get('query').trim();
+    if (!query) return;
+
+    const platforms = formData.getAll('platforms');
+    const btn = document.getElementById('search-btn');
+    const resultsArea = document.getElementById('results-area');
+    const statusEl = document.getElementById('search-status');
+    const emptyHint = document.getElementById('empty-hint');
+    const statusText = document.getElementById('status-text');
+
+    // Reset
+    resultsArea.innerHTML = '';
+    statusEl.classList.remove('hidden');
+    statusText.textContent = '正在搜索...';
+    btn.disabled = true;
+
+    try {
+        const resp = await fetch('/api/search', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({query, platforms}),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const {job_id} = await resp.json();
+
+        const es = new EventSource(`/api/search/${job_id}/stream`);
+        let receivedCount = 0;
+
+        es.addEventListener('platform_result', (event) => {
+            if (emptyHint) emptyHint.remove();
+            const data = JSON.parse(event.data);
+            const card = createCard(data);
+            resultsArea.appendChild(card);
+            receivedCount++;
+            statusText.textContent = `已收到 ${receivedCount} 个平台的结果...`;
+        });
+
+        es.addEventListener('complete', () => {
+            statusEl.classList.add('hidden');
+            es.close();
+            btn.disabled = false;
+            if (receivedCount === 0) {
+                resultsArea.innerHTML = '<div class="col-span-full text-center py-8 text-gray-400">未获取到任何结果</div>';
+            }
+        });
+
+        es.addEventListener('error', (event) => {
+            es.close();
+            statusText.textContent = '连接中断';
+            btn.disabled = false;
+        });
+    } catch (err) {
+        statusText.textContent = `请求失败: ${err.message}`;
+        btn.disabled = false;
+    }
+});
+</script>
+{% endblock %}
