@@ -1,6 +1,7 @@
 """小红书搜索 — 通过 API + Cookie 认证抓取。"""
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -14,14 +15,32 @@ COOKIE_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "cookies"
 
 
 def _load_cookies() -> dict[str, str] | None:
-    if not COOKIE_FILE.exists():
-        return None
-    try:
-        with open(COOKIE_FILE) as f:
-            cookies_list = json.load(f)
-        return {c["name"]: c["value"] for c in cookies_list if "name" in c and "value" in c}
-    except Exception:
-        return None
+    """优先从环境变量 XHS_COOKIES 读取，其次从文件读取。"""
+    # 1. 环境变量（Render 等部署环境）
+    env_cookies = os.environ.get("XHS_COOKIES")
+    if env_cookies:
+        try:
+            cookies_list = json.loads(env_cookies)
+            if isinstance(cookies_list, list):
+                return {c["name"]: c["value"] for c in cookies_list if "name" in c and "value" in c}
+            elif isinstance(cookies_list, dict):
+                return cookies_list
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # 2. 本地文件
+    if COOKIE_FILE.exists():
+        try:
+            with open(COOKIE_FILE) as f:
+                cookies_list = json.load(f)
+            if isinstance(cookies_list, list):
+                return {c["name"]: c["value"] for c in cookies_list if "name" in c and "value" in c}
+            elif isinstance(cookies_list, dict):
+                return cookies_list
+        except Exception:
+            return None
+
+    return None
 
 
 class XiaohongshuScraper(PlatformScraper):
@@ -41,7 +60,7 @@ class XiaohongshuScraper(PlatformScraper):
                 platform=self.platform_id,
                 query=query,
                 results=[],
-                error="需要登录：请在浏览器登录小红书后，将 Cookie 保存到 data/cookies/xiaohongshu.json",
+                error="需要登录：请在 Render 环境变量中设置 XHS_COOKIES（浏览器 Cookie JSON）",
                 elapsed_ms=elapsed,
             )
 

@@ -1,6 +1,5 @@
 """平台注册表 — 管理所有可用的搜索器。"""
 
-from app.config import settings
 from app.scrapers.base import PlatformScraper
 from app.scrapers.web import WebScraper
 from app.scrapers.sogou_wechat import SogouWechatScraper
@@ -10,14 +9,10 @@ _registry: list[PlatformScraper] = []
 
 
 def _build_registry() -> list[PlatformScraper]:
-    xhs = XiaohongshuScraper()
-    if settings.disable_browser:
-        xhs.enabled = False
-
     scrapers: list[PlatformScraper] = [
         WebScraper(),
         SogouWechatScraper(),
-        xhs,
+        XiaohongshuScraper(),  # Cookie 模式，无需浏览器
     ]
     return scrapers
 
