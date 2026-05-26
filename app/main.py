@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 
 import json
 
+import jinja2
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 
 from app.config import settings
 from app.core.browser_pool import browser_pool
@@ -29,7 +29,10 @@ app = FastAPI(title="搜索聚合器", lifespan=lifespan)
 app.include_router(search.router)
 app.include_router(platforms.router)
 
-templates = Jinja2Templates(directory="app/templates")
+_jinja_env = jinja2.Environment(
+    loader=jinja2.FileSystemLoader("app/templates"),
+    autoescape=True,
+)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -37,14 +40,13 @@ async def index(request: Request):
     try:
         ps = get_registry()
         platforms_list = [s.to_dict() for s in ps]
-        return templates.TemplateResponse(
-            "index.html",
-            {
-                "request": request,
-                "platforms": platforms_list,
-                "platforms_json": json.dumps(platforms_list, ensure_ascii=False),
-            },
+        template = _jinja_env.get_template("index.html")
+        html = template.render(
+            request=request,
+            platforms=platforms_list,
+            platforms_json=json.dumps(platforms_list, ensure_ascii=False),
         )
+        return HTMLResponse(html)
     except Exception as e:
         import traceback
         return HTMLResponse(
