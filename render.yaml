@@ -1,0 +1,13 @@
+dockerfilePath: ./Dockerfile
+dockerContext: .
+services:
+  - type: web
+    name: search-aggregator
+    runtime: docker
+    region: singapore
+    plan: free
+    envVars:
+      - key: DISABLE_BROWSER
+        value: "true"
+      - key: SECRET_KEY
+        generateValue: true
