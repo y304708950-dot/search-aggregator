@@ -16,5 +16,7 @@ RUN playwright install-deps chromium
 
 COPY . .
 
+RUN mkdir -p data/cache data/cookies
+
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
