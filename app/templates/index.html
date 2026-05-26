@@ -61,7 +61,7 @@
 </div>
 
 <script>
-const PLATFORM_NAMES = {{ platforms | tojson }};
+const PLATFORM_NAMES = {{ platforms_json | safe }};
 const PLATFORM_MAP = {};
 PLATFORM_NAMES.forEach(p => { PLATFORM_MAP[p.id] = p; });
 

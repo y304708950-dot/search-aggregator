@@ -2,6 +2,8 @@
 
 from contextlib import asynccontextmanager
 
+import json
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -33,7 +35,12 @@ templates = Jinja2Templates(directory="app/templates")
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     ps = get_registry()
+    platforms_list = [s.to_dict() for s in ps]
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "platforms": [s.to_dict() for s in ps]},
+        {
+            "request": request,
+            "platforms": platforms_list,
+            "platforms_json": json.dumps(platforms_list, ensure_ascii=False),
+        },
     )
